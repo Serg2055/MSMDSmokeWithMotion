@@ -33,8 +33,7 @@
 #define MOVE_PIN     2  // 32, PD2 
 // i2C - SHT20, BH1750
 
-#define cSmokeOffLevel  0
-#define cSmokeOnLevel   0
+#define cDelayPick   50 // Delay before read smoke value
 
 #ifdef M25P40
   #define SPIFLASH_BLOCKERASE_32K   0xD8
@@ -121,73 +120,88 @@ void setup() {
   // ATASHA
   testSha204();
 
-  // Test smoke without lithing
-  int fSmoke = analogRead(LED_S_RX);
-  if (fSmoke < cSmokeOffLevel) {
-    Serial.print("Smoke off: Error - ");
-    Serial.println(fSmoke); 
-  } else {
-    Serial.println("Smoke off: ok");
-  }
-
-  // Test smoke with light
-  digitalWrite(LED_S_TX, HIGH);
-  delay(200);
-  fSmoke = analogRead(LED_S_RX);
-  if (fSmoke < cSmokeOnLevel) {
-    Serial.print("Smoke on: Error - ");
-    Serial.println(fSmoke); 
-  } else {
-    Serial.println("Smoke on: ok");
-  }
-
   // SHT20
   if (SHT2x.GetHumidity()==0){
     Serial.println("STH: Error");
   } else {
     Serial.println("STH: OK");
-  }
 
-  // BH1750
-  lightMeter.begin();
-
-  bool fFlag;
-  while (true) {
-    unsigned long currentMillis = millis();     
-    
-    // Battery
-    BatVal = analogRead(BAT_PIN);
-    //TODO: Check value
-    Serial.print("Battery: ");
-    Serial.println(BatVal);
-
-    // Button
-    Serial.print("Connect: ");
-    Serial.println(digitalRead(CONNECT_PIN));
-    
-    digitalWrite(BUZ_PIN, fFlag); // Buzz
-    digitalWrite(LED_PIN, fFlag); // Led
-
-    // Motion
-    Serial.print("Motion: ");
-    Serial.println(digitalRead(MOVE_PIN));
-
-    // SHT20
     Serial.print("SHT (%RH): ");
     Serial.print(SHT2x.GetHumidity());
     Serial.print("     SHT (C): ");
     Serial.println(SHT2x.GetTemperature());
-
-    // BH1750
-    uint16_t lux = lightMeter.readLightLevel();
-    Serial.print("Light: ");
-    Serial.print(lux);
-    Serial.println(" lx");
-    
-    fFlag = !fFlag;
-    delay(1000);
   }
 
+  // BH1750
+  lightMeter.begin();
+  uint16_t lux = lightMeter.readLightLevel();
+  Serial.print("Light: ");
+  Serial.print(lux);
+  Serial.println(" lx");
+
+  // Battery
+  BatVal = analogRead(BAT_PIN);
+  //TODO: Check value
+  Serial.print("Battery: ");
+  Serial.println(BatVal);
+
+  bool fFlag;
+  uint8_t LastBtn;
+  uint8_t LastMotion;
+  unsigned long LastBepLed;
+  unsigned long LastSmokeTest;
+  while (true) {   
+    unsigned long curTime = millis();
+        
+    // Button
+    uint8_t fValBtn = digitalRead(CONNECT_PIN);
+    if (fValBtn != LastBtn) {
+      LastBtn = fValBtn;
+      Serial.print("Connect: ");
+      Serial.println(fValBtn);
+    }
+    
+    // Motion
+    uint8_t fValMotion = digitalRead(MOVE_PIN);
+    if (LastMotion != fValMotion) {
+      LastMotion = fValMotion;
+      Serial.print("Motion: ");
+      Serial.println(fValMotion);
+    }
+  
+    // Beep & led  
+    if (curTime-LastBepLed > 1000) {
+      LastBepLed = curTime;
+      digitalWrite(BUZ_PIN, fFlag); // Buzz
+      digitalWrite(LED_PIN, fFlag); // Led
+      fFlag = !fFlag;
+    }
+
+    if (curTime-LastSmokeTest > 5000) {
+      LastSmokeTest = curTime;
+
+      int L = readSmokeSample();
+      digitalWrite(LED_S_TX, HIGH);
+
+      int D = readSmokeSample();
+      digitalWrite(LED_S_TX, LOW);
+
+      Serial.print("L= ");
+      Serial.println(L);
+      Serial.print("D= ");
+      Serial.println(D);
+    }
+  }
+}
+
+int readSmokeSample() {
+  int L = 0;      
+  for(int i = 0; i < 4; i++){
+    delayMicroseconds(cDelayPick);
+    int C = analogRead(LED_S_RX);
+    L = L + C;
+  }
+  return L / 4;
 }
 
 void loop() {
